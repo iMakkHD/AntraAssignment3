@@ -1,0 +1,161 @@
+-- 1.      List all cities that have both Employees and Customers.
+
+Select Distinct c.city
+From dbo.customers c 
+Where c.city in (
+Select e.city
+From dbo.employees e)
+
+-- 2.      List all cities that have Customers but no Employee.
+
+--a.      Use sub-query
+Select Distinct c.city
+From dbo.customers c 
+Where c.city not in (
+Select e.city
+From dbo.employees e)
+
+--b.      Do not use sub-query
+Select Distinct c.city
+From dbo.customers c 
+except 
+Select e.city
+From dbo.employees e
+
+
+
+-- 3.      List all products and their total order quantities throughout all orders.
+
+Select p.productName, sum(od.quantity) as [Total Quantities]
+From dbo.orders o, dbo.products p, dbo.[Order Details] od
+Where o.orderid = od.orderid and od.productid = p.productid
+Group By p.productName
+
+-- 4.      List all Customer Cities and total products ordered by that city.
+Select dt.city, count(*) [Total Products]
+From (Select c.city, od.productid, count(*) as [Total Products]
+From dbo.orders o, dbo.customers c, dbo.[Order Details] od
+Where o.orderid = od.orderid and c.customerid = o.customerid
+Group By c.city, od.productid) dt
+Group By dt.city
+
+
+-- 5.      List all Customer Cities that have at least two customers.
+
+-- a.      Use union
+Select Distinct dt1.city
+From (Select c1.city, c1.customerid
+From dbo.customers c1
+Union 
+Select c2.city, c2.customerid
+From dbo.customers c2) dt1, (Select c1.city, c1.customerid
+From dbo.customers c1
+Union 
+Select c2.city, c2.customerid
+From dbo.customers c2) dt2
+Where dt1.customerid <> dt2.customerid and dt1.city = dt2.city
+
+-- b.      Use sub-query and no union
+Select distinct c.city
+From dbo.customers c
+where exists (
+Select c1.CustomerID
+From dbo.customers c1
+Where c1.customerid <> c.CustomerID and c.city = c1.city)
+
+-- 6.      List all Customer Cities that have ordered at least two different kinds of products.
+-- Create view to use
+create view cityProducts
+As 
+Select c.city, od.productid, count(*) as [Total Products]
+From dbo.orders o, dbo.customers c, dbo.[Order Details] od
+Where o.orderid = od.orderid and c.customerid = o.customerid
+Group By c.city, od.productid
+
+-- 1st solution using view
+Select distinct cp1.city
+From cityProducts cp1, cityProducts cp2
+where cp1.city = cp2.city and cp1.productid <> cp2.productid
+
+-- 2nd solution
+Select distinct dt1.city
+From (Select c.city, od.productid, count(*) as [Total Products]
+From dbo.orders o, dbo.customers c, dbo.[Order Details] od
+Where o.orderid = od.orderid and c.customerid = o.customerid
+Group By c.city, od.productid) dt1, (Select c.city, od.productid, count(*) as [Total Products]
+From dbo.orders o, dbo.customers c, dbo.[Order Details] od
+Where o.orderid = od.orderid and c.customerid = o.customerid
+Group By c.city, od.productid) dt2
+where dt1.city = dt2.city and dt1.productid <> dt2.productid
+
+-- 7.      List all Customers who have ordered products, but have the ‘ship city’ on the order different from their own customer cities.
+
+Select distinct c.contactname
+From dbo.orders o, dbo.customers c
+where c.customerid = o.customerid and c.city <> o.ShipCity
+
+-- 8.      List 5 most popular products, their average price, and the customer city that ordered most quantity of it.
+create view pca
+as
+Select od.productid, c.City, count(*) as [Amount Ordered]
+From dbo.[Order Details] od, dbo.Orders o, dbo.Customers c
+where od.OrderID = o.OrderID and o.CustomerID = c.CustomerID
+group by od.productid, c.City
+order by ProductID
+
+create view pt
+as
+Select Top 5 productid, sum([Amount Ordered]) as Total
+From pca
+group by ProductID
+order by sum([Amount Ordered]) DESC
+
+Select peet.ProductID, avg(od.UnitPrice), pc.City
+From pt peet, dbo.[Order Details] od, pca pc
+Where peet.ProductID = od.ProductID and pc.ProductID = od.ProductID and pc.[Amount Ordered] >= all(
+Select pc1.[Amount Ordered] From pca pc1 where pc1.ProductID = pc.ProductID)
+group by peet.ProductID, pc.City
+
+-- 9.      List all cities that have never ordered something but we have employees there.
+
+-- a.      Use sub-query
+Select distinct e.city
+From dbo.Employees e
+where e.city not in (Select o.ShipCity From dbo.Orders o)
+
+--b.      Do not use sub-query
+Select distinct e.city
+From dbo.Employees e
+except
+Select o.ShipCity From dbo.Orders o
+
+--10.  List one city, if exists, that is the city from where the employee sold most orders (not the product quantity) is, and also the city of most total quantity of products ordered from. (tip: join  sub-query)
+create view employeeOrders
+as
+Select o.EmployeeID, c.City, count(*) as Total
+From dbo.Orders o, dbo.Customers c
+where o.CustomerID = c.CustomerID
+group by o.EmployeeID, c.City
+order by o.EmployeeID
+
+Create view mostEOCity
+as
+Select distinct eo.EmployeeID, eo.city
+From employeeOrders eo
+where eo.Total >= all(Select eo1.Total From employeeOrders eo1 Where eo.employeeid = eo1.EmployeeID)
+
+create view oneCity
+as
+Select eoc1.city
+From (Select eoc.EmployeeID, count(*) as Total
+From mostEOCity eoc
+group by eoc.EmployeeID
+Having count(*) = 1) dt1, mostEOCity eoc1
+where eoc1.EmployeeID = dt1.EmployeeID
+
+-- 11. How do you remove the duplicates record of a table?
+
+--You can use a group by to combine like column values or the distinct keyword to eliminate duplicates.
+
+--You can also use Rank_number and Partition_by window functions to list number of duplicates per unique combination
+--then use a condition or delete statement to remove rows with ranks greater than 1
